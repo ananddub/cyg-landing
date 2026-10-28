@@ -7,7 +7,7 @@ const LINKS = [
   ['Code', '#code'],
   ['Console', '#console'],
   ['Benchmarks', '#benchmarks'],
-  ['Docs', 'https://ananddub.github.io/cyg/site/'],
+  ['Docs', '/docs.html'],
 ]
 
 export function Logo({ className = 'h-7 w-7' }) {
