@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import hljs from 'highlight.js/lib/core'
 import ini from 'highlight.js/lib/languages/ini'
 import typescript from 'highlight.js/lib/languages/typescript'
@@ -153,6 +153,8 @@ const SECTIONS = [
 
 function useScrollSpy() {
   const [active, setActive] = useState(SECTIONS[0][0])
+  const navRef = useRef(null)
+
   useEffect(() => {
     const obs = new IntersectionObserver(
       (entries) => {
@@ -166,13 +168,20 @@ function useScrollSpy() {
     })
     return () => obs.disconnect()
   }, [])
-  return active
+
+  // keep the active link visible inside the scrollable sidebar
+  useEffect(() => {
+    const el = navRef.current?.querySelector(`a[href="#${active}"]`)
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [active])
+
+  return { active, navRef }
 }
 
 /* ── page ────────────────────────────────────────────────────── */
 
 export default function DocsPage() {
-  const active = useScrollSpy()
+  const { active, navRef } = useScrollSpy()
 
   return (
     <div className="min-h-screen bg-ink font-body text-fg">
@@ -200,9 +209,9 @@ export default function DocsPage() {
 
       <div className="mx-auto flex max-w-7xl gap-10 px-5 pb-24 pt-28 lg:px-8">
         {/* sidebar */}
-        <aside className="sticky top-28 hidden h-fit w-52 flex-none lg:block">
-          <div className="eyebrow mb-5">on this page</div>
-          <nav className="space-y-1">
+        <aside className="sticky top-24 hidden max-h-[calc(100vh-7rem)] w-52 flex-none overflow-y-auto pb-4 lg:block">
+          <div className="eyebrow mb-5 bg-ink pb-2 pt-1">on this page</div>
+          <nav ref={navRef} className="space-y-1">
             {SECTIONS.map(([id, label]) => (
               <a
                 key={id}
