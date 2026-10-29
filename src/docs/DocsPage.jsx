@@ -146,6 +146,7 @@ const SECTIONS = [
   ['guide-console', '13 · Console'],
   ['guide-deploy', '14 · Deploy'],
   ['guide-schema', '15 · Schema DSL'],
+  ['guide-data', '16 · Data & realtime'],
   ['netcode', 'Netcode & transports'],
   ['benchmarks', 'Benchmarks'],
   ['compare', 'How it compares'],
@@ -282,9 +283,11 @@ export default function DocsPage() {
                   rooms × 100 players fits a 2-core / 2 GB pod at 128 Hz). Self-host on a $10/mo
                   VPS or scale on Kubernetes.
                 </FeatureCard>
-                <FeatureCard title="Typed database layer">
-                  FlashORM codegen: named SQL in <b>db/queries/*.sql</b> → typed repositories. Adding a
-                  domain is write-the-SQL, run-gen, call-the-methods.
+                <FeatureCard title="Embedded SurrealDB">
+                  The account plane runs on <b>SurrealDB, embedded in the binary</b> — records are{' '}
+                  <b>#[derive(SurrealRecord)]</b> structs, queries are hand-written SurrealQL, uploads
+                  live in a blob store. No separate database service to install; point at{' '}
+                  <b>ws://host:8000</b> for a remote one.
                 </FeatureCard>
               </div>
             </Section>
@@ -332,13 +335,22 @@ export default function DocsPage() {
           <div id="quick-start" className="scroll-mt-24">
             <Section>
               <H2>Quick start</H2>
-              <Sub>One command for the whole stack — Postgres, Redis and the server, mounted live.</Sub>
+              <Sub>One binary with an embedded database — no Postgres, no Redis, nothing else to install.</Sub>
 
+              <H3>One line (Linux / macOS) — installs the latest release binary</H3>
+              <Pre lang="bash">{`curl -fsSL https://raw.githubusercontent.com/ananddub/cyg/main/scripts/install.sh | sh
+cyg-gaming init my-game && cd my-game
+cyg-gaming run
+# console → http://localhost:8124/dashboard/`}</Pre>
+
+              <H3>Docker image (self-contained, game included)</H3>
+              <Pre lang="bash">{`docker pull dubeyanand/cyg-gaming:v0.1.0`}</Pre>
+
+              <H3>From source (server + embedded SurrealDB, repo mounted live)</H3>
               <Pre lang="bash">{`git clone https://github.com/ananddub/cyg && cd cyg
-just up                     # postgres + redis + server
+just up                     # start the stack
 # console → http://localhost:19224/dashboard/   (admin / change-me in dev)
-just status                 # health of all containers
-just game my-game           # run a different game · just logs · just down`}</Pre>
+just status                 # health of all containers · just down to stop`}</Pre>
 
               <H3>New project</H3>
               <Pre lang="bash">{`cyg-gaming init my-game && cd my-game
@@ -377,7 +389,10 @@ max_clients = 16
 api_port = 8124             # matchmake, signaling, console
 
 [control.session]
-database_url = "postgresql://…"`}</Pre>
+database_endpoint = "surrealkv://data/cyg"   # embedded; or ws://host:8000
+database_memtable_mib = 64                   # SurrealKV ceilings (0 = host-derived)
+database_cache_mib = 32
+blobs = "file:data/uploads"                  # uploaded WASM modules + maps`}</Pre>
 
               <H3>src/schema.ts — declare the state once</H3>
               <Pre lang="typescript">{`import { schema, t } from "cyg";
@@ -468,7 +483,7 @@ cyg-gaming cook in.glb out.oxcl    # cook a 3D collision mesh for instant boot`}
                 [<><Code>max_clients</Code> / <Code>max_rooms</Code></>, 'per-process capacity caps'],
                 [<><Code>width</Code> / <Code>height</Code></>, 'default world bounds handed to rooms'],
                 [<Code>[control] api_port</Code>, 'matchmake + signaling + /v2 API + console'],
-                [<Code>[control.session] database_url</Code>, 'Postgres for accounts, chat, everything BaaS'],
+                [<Code>[control.session] database_endpoint</Code>, <>SurrealDB for accounts, chat, everything BaaS — embedded (<Code>surrealkv://</Code>) or remote (<Code>ws://host:8000</Code>)</>],
                 [<><Code>game_id</Code> / <Code>game_key</Code></>, 'which registered game (games table) this process hosts — required the moment your database has 2+ games'],
                 [<Code>permissions</Code>, <>gates the <Code>sys_*</Code> host imports (physics, logging, …)</>],
               ]}
@@ -1000,6 +1015,58 @@ hp: t.uint8().default(100),`}</Pre>
             </DocList>
           </G>
 
+          {/* 16 data & realtime */}
+          <G id="guide-data" n="16" title="Data — SurrealDB, blobs, realtime">
+            <H3>Embedded, or remote</H3>
+            <p>
+              The account plane (<Code>/v2/*</Code>, <Code>/ws</Code>, the console API) runs on{' '}
+              <b className="text-fg">SurrealDB</b>, and the binary embeds it:{' '}
+              <Code>database_endpoint = "surrealkv://data/cyg"</Code> in config means zero services to
+              install. Point the same key at <Code>ws://host:8000</Code> (plus{' '}
+              <Code>SURREAL_USER</Code>/<Code>SURREAL_PASS</Code>) to run against a remote SurrealDB
+              instead — same binary, local or cloud.
+            </p>
+
+            <H3>Memory ceilings</H3>
+            <p>
+              SurrealKV sizes its memtable and block cache from the host's total memory — too much
+              for small deployments. Two keys pin it:
+            </p>
+            <Pre lang="ini">{`[control.session]
+database_memtable_mib = 64   # largest memtable before a flush
+database_cache_mib = 32      # block cache capacity`}</Pre>
+            <Note>
+              Together they cap data memory at 96 MiB — what lets the whole process fit a 500 MB
+              container. Ceilings, not reservations; <Code>0</Code> restores host-derived sizing.
+            </Note>
+
+            <H3>Blobs — uploads are not table rows</H3>
+            <p>
+              WASM room modules and map assets keep only identity + metadata (<Code>filename</Code>,{' '}
+              <Code>format</Code>, <Code>sha256</Code>, <Code>size_bytes</Code>, version,{' '}
+              <Code>is_active</Code>, <Code>blob_key</Code>) in rows; payloads go to a blob store.
+              <Code>[control.session] blobs</Code> selects it: <Code>file:data/uploads</Code> on disk
+              (default), <Code>memory://</Code>, or <Code>s3:/bucket?region=…&amp;prefix=…</Code> for
+              shared/multi-replica setups.
+            </p>
+
+            <H3>Realtime change feed (LIVE SELECT)</H3>
+            <p>
+              Console views do not poll. SurrealDB's <Code>LIVE SELECT</Code> runs inside the
+              datastore and pushes changes to <Code>/ws/dashboard</Code> as live invalidation frames —
+              never rows, so large payloads stay off the wire. One live query per (topic, game); when
+              the last socket closes the query is dropped, so writes cost nothing while nobody is
+              watching. A client that falls behind gets one <Code>resync</Code> event. Phase 1
+              exposes the tenant's <Code>users</Code> rows.
+            </p>
+
+            <H3>Metrics</H3>
+            <p>
+              A Prometheus <Code>/metrics</Code> endpoint ships in the binary — point any scraper at
+              it, no config.
+            </p>
+          </G>
+
           {/* ── netcode ── */}
           <div id="netcode" className="scroll-mt-24">
             <Section>
@@ -1126,7 +1193,7 @@ hp: t.uint8().default(100),`}</Pre>
                 head={['Crate', 'What it is']}
                 rows={[
                   [<Code>engine-server</Code>, 'host loop: WASM runtime, rooms, inbuilt ECS backend, RUDP, deltas, AOI'],
-                  [<Code>engine-api</Code>, '/v2 player API + /v2/console + dashboard API'],
+                  [<Code>engine-api</Code>, '/v2 player API + /v2/console + dashboard API (Axum, SurrealDB)'],
                   [<Code>engine-net</Code>, 'transports: WebRTC (str0m) + raw UDP + QUIC (quinn-proto, sans-IO)'],
                   [<Code>engine-webrtc-protocol</Code>, 'the shared wire: event/ack frames, SACK, lanes'],
                   [<><Code>engine-wasm</Code> / <Code>engine-schema</Code></>, 'guest ABI + permissions / schema compiler + codegen'],
