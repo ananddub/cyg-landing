@@ -145,6 +145,7 @@ const SECTIONS = [
   ['guide-client', '12 · Client SDK'],
   ['guide-console', '13 · Console'],
   ['guide-deploy', '14 · Deploy'],
+  ['guide-schema', '15 · Schema DSL'],
   ['netcode', 'Netcode & transports'],
   ['benchmarks', 'Benchmarks'],
   ['compare', 'How it compares'],
@@ -379,7 +380,9 @@ api_port = 8124             # matchmake, signaling, console
 database_url = "postgresql://…"`}</Pre>
 
               <H3>src/schema.ts — declare the state once</H3>
-              <Pre lang="typescript">{`const Player = schema({ pid: t.int64(), x: t.number(), y: t.number(), score: t.number() }, "Player");
+              <Pre lang="typescript">{`import { schema, t } from "cyg";
+
+const Player = schema({ pid: t.int64(), x: t.number(), y: t.number(), score: t.number() }, "Player");
 export const State = schema({
     players: t.map(Player),
     coinX: t.number(),
@@ -485,6 +488,8 @@ cyg-gaming cook in.glb out.oxcl    # cook a 3D collision mesh for instant boot`}
               a browser descriptor. Clients decode at join — no client codegen, ever.
             </p>
             <Pre lang="typescript">{`// src/schema.ts
+import { schema, t } from "cyg";
+
 const Player = schema({
     pid: t.int64(), x: t.number(), y: t.number(),
     hp: t.int32(), score: t.int32(),
@@ -929,6 +934,69 @@ just up                       # postgres + redis + server, repo mounted
               <li><b className="text-fg">Identity:</b> set <Code>game_id</Code> (or <Code>game_key</Code>) — with 2+ games in the database the process refuses to guess.</li>
               <li><b className="text-fg">Scale-out:</b> Agones hooks are built in — the pod reports Ready, health-pings, and retires cleanly. One binary per pod; the console shows which game each node hosts.</li>
               <li><b className="text-fg">Health:</b> <Code>/status</Code> (live tick rate, CCU, uptime), <Code>/health</Code>, <Code>cyg-gaming doctor</Code>.</li>
+            </DocList>
+          </G>
+
+          {/* 15 schema dsl */}
+          <G id="guide-schema" n="15" title="Schema DSL — complete reference">
+            <p>
+              Colyseus v5 syntax, fully compatible. File: <Code>src/schema/player.ts</Code>. The
+              compiler reads the <Code>schema({'{...}'}, "Name")</Code> calls and generates the typed
+              AssemblyScript binding (<Code>gen/cyg.schema.ts</Code>), the binary descriptor ({' '}
+              <Code>out/cyg.schema.bin</Code>) and the browser contract ({' '}
+              <Code>out/cyg.schema.d.ts</Code>).
+            </p>
+
+            <H3>Primitives</H3>
+            <Table
+              dense
+              head={['Declaration', 'Wire type', 'Bytes', 'Range / notes']}
+              rows={[
+                [<><Code>t.number()</Code> / <Code>t.float64()</Code> / <Code>t.f64()</Code></>, 'f64', '8', 'positions, angles — default numeric choice'],
+                [<><Code>t.float32()</Code> / <Code>t.f32()</Code></>, 'f32', '4', '7 significant digits'],
+                [<><Code>t.int8()</Code> / <Code>t.i8()</Code></>, 'i8', '1', '−128…127'],
+                [<><Code>t.uint8()</Code> / <Code>t.u8()</Code></>, 'u8', '1', '0…255 — HP, level, flags'],
+                [<><Code>t.int16()</Code> / <Code>t.i16()</Code></>, 'i16', '2', '−32768…32767'],
+                [<><Code>t.uint16()</Code> / <Code>t.u16()</Code></>, 'u16', '2', '0…65535'],
+                [<><Code>t.int32()</Code> / <Code>t.i32()</Code></>, 'i32', '4', 'signed 32-bit'],
+                [<><Code>t.uint32()</Code> / <Code>t.u32()</Code></>, 'u32', '4', '0…4294967295'],
+                [<><Code>t.int64()</Code> / <Code>t.i64()</Code></>, 'i64', '8', 'player ids (i64)'],
+                [<><Code>t.boolean()</Code> / <Code>t.bool()</Code></>, 'bool', '1', 'true/false'],
+                [<Code>t.string()</Code>, 'string', 'var', 'UTF-8, len-prefixed'],
+              ]}
+            />
+            <Note>
+              <b className="text-fg">Size matters:</b> the delta encodes only changed fields — an HP
+              that fits in <Code>uint8</Code> costs 1 byte per change vs 8 for <Code>number</Code>.
+              At 128 Hz × 1000 players the right type choice is the difference between 8 KB/s and
+              64 KB/s per field.
+            </Note>
+
+            <H3>Collections</H3>
+            <Table
+              head={['Declaration', 'Use']}
+              rows={[
+                [<Code>t.map(Player)</Code>, <>keyed entities — <Code>players.set(id, p)</Code>, <Code>.get(id)</Code>, <Code>.delete(id)</Code>, <Code>.ids</Code></>],
+                [<Code>t.array(Item)</Code>, 'ordered list — chat log, bullet feed'],
+                [<Code>t.ref(Other)</Code>, 'entity reference — the entity id travels on the wire'],
+              ]}
+            />
+
+            <H3>Defaults</H3>
+            <Pre lang="typescript">{`pid: t.int64().default(0),
+hp: t.uint8().default(100),`}</Pre>
+            <Note>
+              <Code>.default(value)</Code> is supported on primitives and strings — assign arrays in
+              the constructor.
+            </Note>
+
+            <H3>Rules</H3>
+            <DocList>
+              <li>Every schema file must <Code>export const State = schema({'{...}'}, "State")</Code> — the root.</li>
+              <li>Entity defs (<Code>Player</Code> etc.) are referenced by name inside collections.</li>
+              <li>Reserved words (<Code>var</Code>, <Code>function</Code>, <Code>this</Code>…) are not allowed as field names.</li>
+              <li>Rooms import from <Code>../gen/cyg.schema</Code> — do not import <Code>src/schema/player.ts</Code> directly (the module does not resolve inside the WASM guest).</li>
+              <li>Run <Code>cyg-gaming schema</Code> after edits, or <Code>cyg-gaming run</Code> auto-compiles.</li>
             </DocList>
           </G>
 
