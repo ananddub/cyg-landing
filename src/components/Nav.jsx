@@ -4,7 +4,6 @@ const LINKS = [
   ['Features', '#features'],
   ['3D', '#threed'],
   ['Architecture', '#architecture'],
-  ['Scaling', '#scaling'],
   ['Code', '#code'],
   ['Console', '#console'],
   ['Benchmarks', '#benchmarks'],

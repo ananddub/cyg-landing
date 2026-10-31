@@ -1,5 +1,6 @@
 import Reveal from './Reveal.jsx'
 import SectionHead from './SectionHead.jsx'
+import ScalingVisual from './ScalingVisual.jsx'
 
 const STAGES = [
   {
@@ -62,6 +63,10 @@ export default function Scaling() {
           }
           sub="The question everyone asks: if everything is in one process, how does it scale? Vertically first, horizontally by cloning, and when state has to move out — that's a config change, not a rewrite."
         />
+
+        <Reveal className="mb-14">
+          <ScalingVisual />
+        </Reveal>
 
         <div className="relative grid gap-5 lg:grid-cols-3">
           {/* connector line (desktop) */}
