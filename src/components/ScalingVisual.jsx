@@ -1,9 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Handle,
+  Position,
+  MarkerType,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import { siSurrealdb } from 'simple-icons'
 import { Users, Route, MonitorSmartphone, Cpu, Package, Database, Binary } from 'lucide-react'
 
-/* Animated scaling story: one box → identical pods → split on config.
-   Icon cards + dashed planes + traveling link packets, CSS-interpolated. */
+/* Scaling story as a real flow diagram (React Flow): bezier edges attach to
+   node handles, arrowheads + animated flow show direction — players → API
+   console → rooms/SurrealDB/blobs; rooms scale out in stage 3. */
 
 const si = (icon, cls) => (
   <svg viewBox="0 0 24 24" className={cls} fill="currentColor" aria-hidden="true">
@@ -11,23 +21,84 @@ const si = (icon, cls) => (
   </svg>
 )
 
-const ELEMS = {
-  players: { label: 'players', tint: 'text-sub border-line bg-panel-2', icon: (c) => <Users className={c} /> },
-  mm: { label: 'matchmaker', tint: 'text-frost border-frost/60 bg-frost/10', icon: (c) => <Route className={c} /> },
-  api: { label: 'API + console', tint: 'text-frost border-frost/60 bg-frost/10', icon: (c) => <MonitorSmartphone className={c} /> },
-  rooms: { label: 'rooms · sim', tint: 'text-oxide border-oxide/60 bg-oxide/10', icon: (c) => <Cpu className={c} /> },
-  db: { label: 'SurrealDB', tint: 'text-ember border-ember/60 bg-ember/10', icon: (c) => si(siSurrealdb, c) },
-  blobs: { label: 'blobs · local', tint: 'text-sub border-line bg-panel-2', icon: (c) => <Package className={c} /> },
-  s3: { label: 'S3 bucket', tint: 'text-sub border-line bg-panel-2', icon: (c) => <Database className={c} /> },
-  clone: { label: 'same binary', tint: 'text-mute border-line/70 bg-panel-2/60 border-dashed', icon: (c) => <Binary className={c} /> },
+const TINT = {
+  frost: 'text-frost border-frost/60 bg-[#0d1420]',
+  oxide: 'text-oxide border-oxide/60 bg-[#0c1710]',
+  ember: 'text-ember border-ember/60 bg-[#171208]',
+  zinc: 'text-sub border-line bg-panel-2',
+  ghost: 'text-mute border-line/70 border-dashed bg-panel-2/50',
 }
 
-/* approx half-width of each card in viewBox % units — links attach to card
-   edges, never through the middle of a card */
-const HALF_W = {
-  players: 3.4, mm: 4.6, api: 5.2, rooms: 4.8, db: 4.6, blobs: 4.8, s3: 4.2,
-  clone1: 4.4, clone2: 4.4, rooms1: 4.8, rooms2: 4.8, p2a: 0, p3a: 0,
-};
+const ICONS = {
+  players: (c) => <Users className={c} />,
+  mm: (c) => <Route className={c} />,
+  api: (c) => <MonitorSmartphone className={c} />,
+  rooms: (c) => <Cpu className={c} />,
+  db: (c) => si(siSurrealdb, c),
+  blobs: (c) => <Package className={c} />,
+  s3: (c) => <Database className={c} />,
+  clone: (c) => <Binary className={c} />,
+}
+
+function SysNode({ data }) {
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-xl border px-3 py-2 shadow-lg shadow-black/30 ${TINT[data.tint]} ${
+        data.glow ? 'shadow-[0_0_26px_-2px_rgba(251,191,36,0.5)]' : ''
+      }`}
+    >
+      {ICONS[data.icon]?.('h-4 w-4 shrink-0')}
+      <span className="whitespace-nowrap font-mono text-[10.5px] font-semibold">{data.label}</span>
+      <Handle type="target" position={Position.Left} className="!h-0 !w-0 !border-0 !opacity-0" />
+      <Handle type="source" position={Position.Right} className="!h-0 !w-0 !border-0 !opacity-0" />
+    </div>
+  )
+}
+
+function GroupNode({ data }) {
+  return (
+    <div className="h-full w-full rounded-xl border border-dashed border-oxide/35">
+      <span className="absolute -top-2 left-3 bg-panel px-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-oxide/70">
+        {data.label}
+      </span>
+    </div>
+  )
+}
+
+const nodeTypes = { sys: SysNode, plane: GroupNode }
+
+const sys = (id, x, y, label, tint, opts = {}) => ({
+  id,
+  type: 'sys',
+  position: { x, y },
+  data: { label, tint, icon: id.replace(/\d+$/, ''), glow: opts.glow ?? false, ...(opts.data ?? {}) },
+  draggable: false,
+  ...(opts.parentId ? { parentId: opts.parentId, extent: 'parent' } : {}),
+})
+
+const plane = (id, x, y, w, h, label) => ({
+  id,
+  type: 'plane',
+  position: { x, y },
+  data: { label },
+  style: { width: w, height: h },
+  draggable: false,
+  selectable: false,
+})
+
+const edge = (source, target, color) => ({
+  id: `e-${source}-${target}`,
+  source,
+  target,
+  animated: true,
+  style: { stroke: color, strokeWidth: 2 },
+  markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
+})
+
+const FROST = '#60a5fa'
+const OXIDE = '#4ade80'
+
+/* ── stage definitions ─────────────────────────────────────────── */
 
 const STAGE_META = [
   { n: '01', name: 'One box', caption: 'players → API console → rooms · SurrealDB · blobs — all inside one process.' },
@@ -35,100 +106,69 @@ const STAGE_META = [
   { n: '03', name: 'Rooms scale out', caption: 'room hosts split into their own tier — API + SurrealDB + blobs stay in the control plane.' },
 ]
 
-const STAGES = [
-  {
-    boxes: [{ id: 'pod', x: 30, y: 12, w: 62, h: 76, label: 'one binary' }],
-    pos: {
-      players: { x: 6, y: 50 },
-      api: { x: 44, y: 30 },
-      rooms: { x: 78, y: 30 },
-      db: { x: 44, y: 68 },
-      blobs: { x: 78, y: 68 },
-    },
-    glow: [],
-    links: [
-      ['players', 'api'],
-      ['api', 'rooms'],
-      ['api', 'db'],
-      ['api', 'blobs'],
-    ],
-  },
-  {
-    boxes: [
-      { id: 'p1', x: 34, y: 4, w: 58, h: 32, label: 'pod — API · rooms · SurrealDB · blobs' },
-      { id: 'p2', x: 34, y: 38, w: 58, h: 28, label: 'pod' },
-      { id: 'p3', x: 34, y: 68, w: 58, h: 28, label: 'pod' },
-    ],
-    pos: {
-      players: { x: 6, y: 50 },
-      mm: { x: 19, y: 50 },
-      api: { x: 46, y: 16 },
-      rooms: { x: 67, y: 16 },
-      db: { x: 46, y: 27 },
-      blobs: { x: 67, y: 27 },
-      clone1: { x: 63, y: 52 },
-      clone2: { x: 63, y: 82 },
-    },
-    glow: [],
-    links: [
-      ['players', 'mm'],
-      ['mm', 'api'],
-      ['mm', 'clone1'],
-      ['mm', 'clone2'],
-    ],
-  },
-  {
-    boxes: [
-      { id: 'cp', x: 20, y: 10, w: 32, h: 80, label: 'control plane' },
-      { id: 'r1', x: 64, y: 14, w: 28, h: 30, label: 'room host' },
-      { id: 'r2', x: 64, y: 56, w: 28, h: 30, label: 'room host' },
-    ],
-    pos: {
-      players: { x: 5, y: 50 },
-      api: { x: 36, y: 28 },
-      db: { x: 36, y: 52 },
-      blobs: { x: 36, y: 76 },
-      rooms1: { x: 78, y: 29 },
-      rooms2: { x: 78, y: 71 },
-    },
-    glow: ['rooms1', 'rooms2'],
-    links: [
-      ['players', 'api'],
-      ['api', 'rooms1'],
-      ['api', 'rooms2'],
-      ['api', 'db'],
-      ['api', 'blobs'],
-    ],
-  },
-]
-
-function Card({ id, p, glow }) {
-  const e = ELEMS[id.replace(/\d+$/, '')] ?? ELEMS[id]
-  const visible = Boolean(p) && !p.hidden
-  const isGhost = id.startsWith('clone')
-  const tint = (ELEM_STYLE_TINT(id) ?? e.tint)
-  return (
-    <div
-      className={`absolute flex items-center gap-2 rounded-xl border px-3 py-2 shadow-lg shadow-black/30 transition-all duration-1000 ease-[cubic-bezier(0.65,0,0.35,1)] ${tint} ${
-        glow ? 'shadow-[0_0_24px_-2px_rgba(251,191,36,0.45)]' : ''
-      }`}
-      style={{
-        left: `${p?.x ?? 50}%`,
-        top: `${p?.y ?? 50}%`,
-        transform: 'translate(-50%, -50%)',
-        opacity: visible ? (isGhost ? 0.75 : 1) : 0,
-        pointerEvents: 'none',
-      }}
-    >
-      {e.icon('h-4 w-4 shrink-0')}
-      <span className="whitespace-nowrap font-mono text-[10.5px] font-semibold">{e.label}</span>
-    </div>
-  )
+function stageNodes(stage) {
+  if (stage === 0) {
+    return [
+      plane('pod', 170, 30, 560, 330, 'one binary'),
+      sys('players', 0, 165, 'players', 'zinc'),
+      sys('api', 260, 85, 'API + console', 'frost', { parentId: 'pod' }),
+      sys('rooms', 420, 85, 'rooms · sim', 'oxide', { parentId: 'pod' }),
+      sys('db', 260, 215, 'SurrealDB', 'ember', { parentId: 'pod' }),
+      sys('blobs', 420, 215, 'blobs · local', 'zinc', { parentId: 'pod' }),
+    ]
+  }
+  if (stage === 1) {
+    return [
+      plane('p1', 240, 0, 500, 130, 'pod — API · rooms · SurrealDB · blobs'),
+      plane('p2', 240, 160, 500, 110, 'pod'),
+      plane('p3', 240, 300, 500, 110, 'pod'),
+      sys('players', 0, 180, 'players', 'zinc'),
+      sys('mm', 90, 180, 'matchmaker', 'frost'),
+      sys('api', 270, 25, 'API + console', 'frost', { parentId: 'p1' }),
+      sys('rooms', 420, 25, 'rooms · sim', 'oxide', { parentId: 'p1' }),
+      sys('db', 270, 70, 'SurrealDB', 'ember', { parentId: 'p1' }),
+      sys('blobs', 420, 70, 'blobs · local', 'zinc', { parentId: 'p1' }),
+      sys('clone1', 400, 195, 'same binary', 'ghost', { parentId: 'p2', data: { icon: 'clone' } }),
+      sys('clone2', 400, 335, 'same binary', 'ghost', { parentId: 'p3', data: { icon: 'clone' } }),
+    ]
+  }
+  return [
+    plane('cp', 170, 20, 260, 380, 'control plane'),
+    plane('r1', 520, 20, 250, 160, 'room host'),
+    plane('r2', 520, 220, 250, 160, 'room host'),
+    sys('players', 0, 180, 'players', 'zinc'),
+    sys('api', 210, 80, 'API + console', 'frost', { parentId: 'cp' }),
+    sys('db', 210, 180, 'SurrealDB', 'ember', { parentId: 'cp' }),
+    sys('blobs', 210, 280, 'blobs · local', 'zinc', { parentId: 'cp' }),
+    sys('rooms1', 565, 80, 'rooms · sim', 'oxide', { parentId: 'r1', glow: true }),
+    sys('rooms2', 565, 280, 'rooms · sim', 'oxide', { parentId: 'r2', glow: true }),
+  ]
 }
 
-function ELEM_STYLE_TINT(id) {
-  if (id === 'clone1' || id === 'clone2') return ELEMS.clone.tint
-  return null
+function stageEdges(stage) {
+  if (stage === 0) {
+    return [
+      edge('players', 'api', FROST),
+      edge('api', 'rooms', OXIDE),
+      edge('api', 'db', OXIDE),
+      edge('api', 'blobs', OXIDE),
+    ]
+  }
+  if (stage === 1) {
+    return [
+      edge('players', 'mm', FROST),
+      edge('mm', 'api', FROST),
+      edge('mm', 'clone1', FROST),
+      edge('mm', 'clone2', FROST),
+    ]
+  }
+  return [
+    edge('players', 'api', FROST),
+    edge('api', 'rooms1', OXIDE),
+    edge('api', 'rooms2', OXIDE),
+    edge('api', 'db', OXIDE),
+    edge('api', 'blobs', OXIDE),
+  ]
 }
 
 export default function ScalingVisual() {
@@ -138,11 +178,12 @@ export default function ScalingVisual() {
 
   useEffect(() => {
     if (paused) return
-    timer.current = setInterval(() => setStage((s) => (s + 1) % 3), 4200)
+    timer.current = setInterval(() => setStage((s) => (s + 1) % 3), 4500)
     return () => clearInterval(timer.current)
   }, [paused])
 
-  const cur = STAGES[stage]
+  const nodes = useMemo(() => stageNodes(stage), [stage])
+  const edges = useMemo(() => stageEdges(stage), [stage])
 
   return (
     <div
@@ -167,75 +208,35 @@ export default function ScalingVisual() {
         ))}
       </div>
 
-      {/* canvas */}
-      <div className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl border border-line bg-panel">
-        {/* caption */}
-        <div className="absolute left-1/2 top-3 z-10 w-[92%] -translate-x-1/2 text-center font-mono text-[10.5px] leading-relaxed text-mute transition-opacity duration-500 sm:text-[11.5px]">
-          <span className="text-oxide">{STAGE_META[stage].n}</span> — {STAGE_META[stage].caption}
-        </div>
+      {/* caption */}
+      <p className="mx-auto mb-3 max-w-2xl text-center font-mono text-[10.5px] leading-relaxed text-mute sm:text-[11.5px]">
+        <span className="text-oxide">{STAGE_META[stage].n}</span> — {STAGE_META[stage].caption}
+      </p>
 
-        {/* dashed plane boxes */}
-        {cur.boxes.map((b) => (
-          <div
-            key={b.id}
-            className="absolute rounded-xl border border-dashed border-oxide/30 transition-all duration-1000 ease-[cubic-bezier(0.65,0,0.35,1)]"
-            style={{ left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` }}
-          >
-            <span className="absolute -top-2 left-3 bg-panel px-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-oxide/70">
-              {b.label}
-            </span>
-          </div>
-        ))}
-
-        {/* links: edge-to-edge, arrowheads show direction, packets show flow */}
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 56.25" preserveAspectRatio="none">
-          <defs>
-            <marker id="arr-frost" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#60a5fa" />
-            </marker>
-            <marker id="arr-oxide" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#4ade80" />
-            </marker>
-          </defs>
-          {cur.links.map(([from, to, label]) => {
-            const a = cur.pos[from]
-            const b = cur.pos[to]
-            if (!a || !b) return null
-            const color = from === 'players' || to === 'mm' || from === 'mm' ? '#60a5fa' : '#4ade80'
-            // attach to the facing card edges instead of the centers
-            const goingRight = b.x >= a.x
-            const x1 = goingRight ? a.x + (HALF_W[from] ?? 4) : a.x - (HALF_W[from] ?? 4)
-            const x2 = goingRight ? b.x - (HALF_W[to] ?? 4) : b.x + (HALF_W[to] ?? 4)
-            const y1 = a.y
-            const y2 = b.y
-            const midX = (x1 + x2) / 2
-            const midY = (y1 + y2) / 2 - 2.5
-            return (
-              <g key={`${from}-${to}-${stage}`}>
-                <line
-                  x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke={color} strokeWidth="0.4" strokeDasharray="1.6 1"
-                  vectorEffect="non-scaling-stroke" strokeOpacity="0.8"
-                  markerEnd={`url(#${color === '#60a5fa' ? 'arr-frost' : 'arr-oxide'})`}
-                />
-                <circle r="0.8" fill={color} style={{ filter: `drop-shadow(0 0 2px ${color})` }}>
-                  <animateMotion dur="1.5s" repeatCount="indefinite" path={`M ${x1} ${y1} L ${x2} ${y2}`} />
-                </circle>
-                {label && (
-                  <text x={midX} y={midY} fontSize="2.3" fill="#93a1bb" textAnchor="middle" fontFamily="monospace">
-                    {label}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </svg>
-
-        {/* element cards — every id the stages can place */}
-        {['players', 'mm', 'api', 'rooms', 'rooms1', 'rooms2', 'db', 'blobs', 's3', 'clone1', 'clone2'].map((id) => {
-          const p = cur.pos[id]
-          return <Card key={id} id={id} p={p} glow={cur.glow.includes(id)} />
-        })}
+      {/* the flow diagram */}
+      <div className="h-[440px] w-full overflow-hidden rounded-2xl border border-line bg-panel">
+        <ReactFlow
+          key={stage}
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          colorMode="dark"
+          fitView
+          fitViewOptions={{ padding: 0.18 }}
+          minZoom={0.4}
+          maxZoom={1.4}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          panOnScroll={false}
+          preventScrolling={false}
+          proOptions={{ hideAttribution: false }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1e2430" />
+        </ReactFlow>
       </div>
     </div>
   )
