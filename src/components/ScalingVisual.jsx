@@ -8,6 +8,7 @@ import {
   MarkerType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import dagre from '@dagrejs/dagre'
 import { siSurrealdb } from 'simple-icons'
 import { Users, Route, MonitorSmartphone, Cpu, Package, Database, Binary } from 'lucide-react'
 
@@ -38,6 +39,53 @@ const ICONS = {
   blobs: (c) => <Package className={c} />,
   s3: (c) => <Database className={c} />,
   clone: (c) => <Binary className={c} />,
+}
+
+const CARD_H = 44
+const cardW = (label) => Math.max(112, 34 + label.length * 7.4)
+
+/**
+ * dagre compound layout — computes every card and plane position from the
+ * graph structure alone (ranks, nesting, spacing). Alignment is guaranteed
+ * by the engine, not by hand-placed coordinates.
+ */
+function layoutGraph(rawNodes, rawEdges) {
+  const g = new dagre.graphlib.Graph({ compound: true })
+  g.setGraph({ rankdir: 'LR', nodesep: 26, ranksep: 64, marginx: 18, marginy: 18, edgesep: 16 })
+  g.setDefaultEdgeLabel(() => ({}))
+
+  for (const n of rawNodes) {
+    if (n.type === 'plane') {
+      g.setNode(n.id, { width: 60, height: 60 }) // grows to fit children
+    } else {
+      g.setNode(n.id, { width: cardW(n.data.label), height: CARD_H })
+    }
+    if (n.parentId) g.setParent(n.id, n.parentId)
+  }
+  for (const e of rawEdges) g.setEdge(e.source, e.target)
+
+  dagre.layout(g)
+
+  return rawNodes.map((n) => {
+    const gn = g.node(n.id)
+    if (n.type === 'plane') {
+      return {
+        ...n,
+        position: { x: gn.x - gn.width / 2, y: gn.y - gn.height / 2 },
+        style: { width: gn.width, height: gn.height },
+      }
+    }
+    const w = cardW(n.data.label)
+    let pos = { x: gn.x - w / 2, y: gn.y - CARD_H / 2 }
+    if (n.parentId) {
+      const gp = g.node(n.parentId)
+      pos = {
+        x: pos.x - (gp.x - gp.width / 2),
+        y: pos.y - (gp.y - gp.height / 2),
+      }
+    }
+    return { ...n, position: pos }
+  })
 }
 
 function SysNode({ data }) {
@@ -106,43 +154,46 @@ const STAGE_META = [
   { n: '03', name: 'Rooms scale out', caption: 'room hosts split into their own tier — API + SurrealDB + blobs stay in the control plane.' },
 ]
 
+/** raw graph per stage — positions come from dagre, never from us */
 function stageNodes(stage) {
+  let raw
   if (stage === 0) {
-    return [
-      plane('pod', 170, 30, 560, 330, 'one binary'),
-      sys('players', 0, 165, 'players', 'zinc'),
-      sys('api', 260, 85, 'API + console', 'frost', { parentId: 'pod' }),
-      sys('rooms', 420, 85, 'rooms · sim', 'oxide', { parentId: 'pod' }),
-      sys('db', 260, 215, 'SurrealDB', 'ember', { parentId: 'pod' }),
-      sys('blobs', 420, 215, 'blobs · local', 'zinc', { parentId: 'pod' }),
+    raw = [
+      { ...plane('pod', 0, 0, 0, 0, 'one binary') },
+      { ...sys('players', 0, 0, 'players', 'zinc') },
+      { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'pod' }) },
+      { ...sys('rooms', 0, 0, 'rooms · sim', 'oxide', { parentId: 'pod' }) },
+      { ...sys('db', 0, 0, 'SurrealDB', 'ember', { parentId: 'pod' }) },
+      { ...sys('blobs', 0, 0, 'blobs · local', 'zinc', { parentId: 'pod' }) },
+    ]
+  } else if (stage === 1) {
+    raw = [
+      { ...plane('p1', 0, 0, 0, 0, 'pod — API · rooms · SurrealDB · blobs') },
+      { ...plane('p2', 0, 0, 0, 0, 'pod') },
+      { ...plane('p3', 0, 0, 0, 0, 'pod') },
+      { ...sys('players', 0, 0, 'players', 'zinc') },
+      { ...sys('mm', 0, 0, 'matchmaker', 'frost') },
+      { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'p1' }) },
+      { ...sys('rooms', 0, 0, 'rooms · sim', 'oxide', { parentId: 'p1' }) },
+      { ...sys('db', 0, 0, 'SurrealDB', 'ember', { parentId: 'p1' }) },
+      { ...sys('blobs', 0, 0, 'blobs · local', 'zinc', { parentId: 'p1' }) },
+      { ...sys('clone1', 0, 0, 'same binary', 'ghost', { parentId: 'p2', data: { icon: 'clone' } }) },
+      { ...sys('clone2', 0, 0, 'same binary', 'ghost', { parentId: 'p3', data: { icon: 'clone' } }) },
+    ]
+  } else {
+    raw = [
+      { ...plane('cp', 0, 0, 0, 0, 'control plane') },
+      { ...plane('r1', 0, 0, 0, 0, 'room host') },
+      { ...plane('r2', 0, 0, 0, 0, 'room host') },
+      { ...sys('players', 0, 0, 'players', 'zinc') },
+      { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'cp' }) },
+      { ...sys('db', 0, 0, 'SurrealDB', 'ember', { parentId: 'cp' }) },
+      { ...sys('blobs', 0, 0, 'blobs · local', 'zinc', { parentId: 'cp' }) },
+      { ...sys('rooms1', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r1', glow: true }) },
+      { ...sys('rooms2', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r2', glow: true }) },
     ]
   }
-  if (stage === 1) {
-    return [
-      plane('p1', 240, 0, 500, 130, 'pod — API · rooms · SurrealDB · blobs'),
-      plane('p2', 240, 160, 500, 110, 'pod'),
-      plane('p3', 240, 300, 500, 110, 'pod'),
-      sys('players', 0, 180, 'players', 'zinc'),
-      sys('mm', 90, 180, 'matchmaker', 'frost'),
-      sys('api', 270, 25, 'API + console', 'frost', { parentId: 'p1' }),
-      sys('rooms', 420, 25, 'rooms · sim', 'oxide', { parentId: 'p1' }),
-      sys('db', 270, 70, 'SurrealDB', 'ember', { parentId: 'p1' }),
-      sys('blobs', 420, 70, 'blobs · local', 'zinc', { parentId: 'p1' }),
-      sys('clone1', 400, 195, 'same binary', 'ghost', { parentId: 'p2', data: { icon: 'clone' } }),
-      sys('clone2', 400, 335, 'same binary', 'ghost', { parentId: 'p3', data: { icon: 'clone' } }),
-    ]
-  }
-  return [
-    plane('cp', 170, 20, 260, 380, 'control plane'),
-    plane('r1', 520, 20, 250, 160, 'room host'),
-    plane('r2', 520, 220, 250, 160, 'room host'),
-    sys('players', 0, 180, 'players', 'zinc'),
-    sys('api', 210, 80, 'API + console', 'frost', { parentId: 'cp' }),
-    sys('db', 210, 180, 'SurrealDB', 'ember', { parentId: 'cp' }),
-    sys('blobs', 210, 280, 'blobs · local', 'zinc', { parentId: 'cp' }),
-    sys('rooms1', 565, 80, 'rooms · sim', 'oxide', { parentId: 'r1', glow: true }),
-    sys('rooms2', 565, 280, 'rooms · sim', 'oxide', { parentId: 'r2', glow: true }),
-  ]
+  return layoutGraph(raw, stageEdges(stage))
 }
 
 function stageEdges(stage) {
