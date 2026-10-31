@@ -19,34 +19,20 @@ const STAGES = [
   },
   {
     n: '02',
-    title: 'Identical pods',
-    tag: 'horizontal',
-    body: (
-      <>
-        Scale out = add pods, nothing else. The <b className="text-fg">same binary</b> runs
-        everywhere; the <b className="text-fg">Agones GameServer lifecycle</b> is built in (ready,
-        health pings, clean retire). The matchmaker reserves seats and routes players — rooms are
-        the unit of scale and land wherever there is capacity. Each pod binds its tenant with{' '}
-        <code className="code-inline">game_id</code>.
-      </>
-    ),
-    foot: 'No orchestration service to invent — Kubernetes already knows it.',
-  },
-  {
-    n: '03',
-    title: 'Split on config, not code',
+    title: 'Rooms scale out',
     tag: 'separation',
     body: (
       <>
-        State moves out with two keys.{' '}
-        <code className="code-inline">database_endpoint = &quot;ws://host:8000&quot;</code> — the
-        embedded SurrealDB becomes remote and pods go stateless overnight.{' '}
-        <code className="code-inline">blobs = &quot;s3:/bucket&quot;</code> — uploads share across
-        replicas. The control plane (API + console) and room hosts were separate planes from day
-        one, so they scale independently.
+        When CPU hurts, only the rooms move. Room hosts register with the fleet —{' '}
+        <b className="text-fg">Agones lifecycle built in</b> (ready, health, retire) — and the
+        matchmaker seats players across them. The control plane keeps API, console, SurrealDB and
+        blobs; pointing <code className="code-inline">database_endpoint</code> at{' '}
+        <code className="code-inline">ws://host:8000</code> and{' '}
+        <code className="code-inline">blobs</code> at S3 makes even that shareable. Same binary
+        everywhere — config decides the role.
       </>
     ),
-    foot: 'The artifact never changes — only where it points.',
+    foot: 'You never split a monolith — you clone it and let config decide its job.',
   },
 ]
 
@@ -68,7 +54,7 @@ export default function Scaling() {
           <ScalingVisual />
         </Reveal>
 
-        <div className="relative grid gap-5 lg:grid-cols-3">
+        <div className="relative mx-auto grid max-w-4xl gap-5 lg:grid-cols-2">
           {/* connector line (desktop) */}
           <div className="pointer-events-none absolute left-0 right-0 top-10 hidden border-t border-dashed border-oxide/25 lg:block" aria-hidden="true" />
 

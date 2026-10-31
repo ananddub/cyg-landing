@@ -150,8 +150,7 @@ const OXIDE = '#4ade80'
 
 const STAGE_META = [
   { n: '01', name: 'One box', caption: 'players → API console → rooms · SurrealDB · blobs — all inside one process.' },
-  { n: '02', name: 'Identical pods', caption: 'clone the whole pod — the matchmaker seats players across identical binaries.' },
-  { n: '03', name: 'Rooms scale out', caption: 'room hosts split into their own tier — API + SurrealDB + blobs stay in the control plane.' },
+  { n: '02', name: 'Rooms scale out', caption: 'room hosts split into their own tier — API + SurrealDB + blobs stay in the control plane.' },
 ]
 
 /** raw graph per stage — positions come from dagre, never from us */
@@ -165,20 +164,6 @@ function stageNodes(stage) {
       { ...sys('rooms', 0, 0, 'rooms · sim', 'oxide', { parentId: 'pod' }) },
       { ...sys('db', 0, 0, 'SurrealDB', 'ember', { parentId: 'pod' }) },
       { ...sys('blobs', 0, 0, 'blobs · local', 'zinc', { parentId: 'pod' }) },
-    ]
-  } else if (stage === 1) {
-    raw = [
-      { ...plane('p1', 0, 0, 0, 0, 'pod — API · rooms · SurrealDB · blobs') },
-      { ...plane('p2', 0, 0, 0, 0, 'pod') },
-      { ...plane('p3', 0, 0, 0, 0, 'pod') },
-      { ...sys('players', 0, 0, 'players', 'zinc') },
-      { ...sys('mm', 0, 0, 'matchmaker', 'frost') },
-      { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'p1' }) },
-      { ...sys('rooms', 0, 0, 'rooms · sim', 'oxide', { parentId: 'p1' }) },
-      { ...sys('db', 0, 0, 'SurrealDB', 'ember', { parentId: 'p1' }) },
-      { ...sys('blobs', 0, 0, 'blobs · local', 'zinc', { parentId: 'p1' }) },
-      { ...sys('clone1', 0, 0, 'same binary', 'ghost', { parentId: 'p2', data: { icon: 'clone' } }) },
-      { ...sys('clone2', 0, 0, 'same binary', 'ghost', { parentId: 'p3', data: { icon: 'clone' } }) },
     ]
   } else {
     raw = [
@@ -205,14 +190,6 @@ function stageEdges(stage) {
       edge('api', 'blobs', OXIDE),
     ]
   }
-  if (stage === 1) {
-    return [
-      edge('players', 'mm', FROST),
-      edge('mm', 'api', FROST),
-      edge('mm', 'clone1', FROST),
-      edge('mm', 'clone2', FROST),
-    ]
-  }
   return [
     edge('players', 'api', FROST),
     edge('api', 'rooms1', OXIDE),
@@ -229,7 +206,7 @@ export default function ScalingVisual() {
 
   useEffect(() => {
     if (paused) return
-    timer.current = setInterval(() => setStage((s) => (s + 1) % 3), 4500)
+    timer.current = setInterval(() => setStage((s) => (s + 1) % 2), 4500)
     return () => clearInterval(timer.current)
   }, [paused])
 
