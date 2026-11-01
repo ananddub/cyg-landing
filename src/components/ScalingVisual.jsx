@@ -51,7 +51,7 @@ const cardW = (label) => Math.max(112, 34 + label.length * 7.4)
  */
 function layoutGraph(rawNodes, rawEdges) {
   const g = new dagre.graphlib.Graph({ compound: true })
-  g.setGraph({ rankdir: 'LR', nodesep: 26, ranksep: 64, marginx: 18, marginy: 18, edgesep: 16 })
+  g.setGraph({ rankdir: 'LR', nodesep: 26, ranksep: 46, marginx: 18, marginy: 18, edgesep: 16 })
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const n of rawNodes) {
@@ -220,7 +220,8 @@ function tweenNodes(fromNodes, toNodes, duration, onFrame, onDone) {
     const current = toNodes.map((tn) => {
       const fn = startMap.get(tn.id)
       if (!fn) {
-        return { ...tn, style: { ...(tn.style ?? {}), opacity: k } }
+        // brand-new elements appear quickly at the start, not throughout
+        return { ...tn, style: { ...(tn.style ?? {}), opacity: Math.min(1, k * 4) } }
       }
       const style = { ...(tn.style ?? {}), opacity: 1 }
       if (fn.style?.width != null && tn.style?.width != null) {
@@ -237,10 +238,11 @@ function tweenNodes(fromNodes, toNodes, duration, onFrame, onDone) {
       }
     })
 
-    // nodes that don't exist in the target: fade out in place
+    // elements leaving the graph stay until the movers land, then vanish fast
     for (const fn of fromNodes) {
       if (!toMap.has(fn.id)) {
-        current.push({ ...fn, style: { ...(fn.style ?? {}), opacity: 1 - k } })
+        const fade = Math.max(0, Math.min(1, (k - 0.7) / 0.3))
+        current.push({ ...fn, style: { ...(fn.style ?? {}), opacity: 1 - fade } })
       }
     }
 
