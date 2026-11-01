@@ -66,13 +66,14 @@ function layoutGraph(rawNodes, rawEdges) {
 
   dagre.layout(g)
 
-  return rawNodes.map((n) => {
+  // first pass: absolute positions for everything
+  const abs = rawNodes.map((n) => {
     const gn = g.node(n.id)
     if (n.type === 'plane') {
       return {
         ...n,
         position: { x: gn.x - gn.width / 2, y: gn.y - gn.height / 2 },
-        style: { width: gn.width, height: gn.height },
+        style: { ...(n.style ?? {}), width: gn.width, height: gn.height, zIndex: -1 },
       }
     }
     const w = cardW(n.data.label)
@@ -85,6 +86,27 @@ function layoutGraph(rawNodes, rawEdges) {
       }
     }
     return { ...n, position: pos }
+  })
+
+  // second pass: FLATTEN — children of a plane get plain absolute coords.
+  // (React Flow's parent-relative system would corrupt position tweens,
+  // so planes are just background boxes, never parents.)
+  const byId = new Map(abs.map((n) => [n.id, n]))
+  return abs.map((n) => {
+    if (n.type !== 'plane' && n.parentId) {
+      const parent = byId.get(n.parentId)
+      if (parent) {
+        const { parentId: _drop, extent: _drop2, ...rest } = n
+        return {
+          ...rest,
+          position: {
+            x: parent.position.x + n.position.x,
+            y: parent.position.y + n.position.y,
+          },
+        }
+      }
+    }
+    return n
   })
 }
 
