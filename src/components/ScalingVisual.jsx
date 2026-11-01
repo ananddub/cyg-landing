@@ -167,15 +167,17 @@ function stageNodes(stage) {
     ]
   } else {
     raw = [
-      { ...plane('cp', 0, 0, 0, 0, 'control plane') },
+      // shared ids with stage 1 → these MORPH, they don't re-appear:
+      // pod → control plane, rooms → first room host, blobs → S3 bucket
+      { ...plane('pod', 0, 0, 0, 0, 'control plane') },
       { ...plane('r1', 0, 0, 0, 0, 'room host') },
       { ...plane('r2', 0, 0, 0, 0, 'room host') },
       { ...sys('players', 0, 0, 'players', 'zinc') },
-      { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'cp' }) },
-      { ...sys('rooms1', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r1', glow: true }) },
+      { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'pod' }) },
+      { ...sys('rooms', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r1', glow: true }) },
       { ...sys('rooms2', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r2', glow: true }) },
       { ...sys('db', 0, 0, 'SurrealDB', 'ember', { glow: true }) },
-      { ...sys('s3', 0, 0, 'S3 bucket', 'zinc', { glow: true }) },
+      { ...sys('blobs', 0, 0, 'S3 bucket', 'zinc', { glow: true, data: { icon: 's3' } }) },
     ]
   }
   return layoutGraph(raw, stageEdges(stage))
@@ -195,7 +197,7 @@ function stageEdges(stage) {
     edge('api', 'rooms1', OXIDE),
     edge('api', 'rooms2', OXIDE),
     edge('api', 'db', OXIDE),
-    edge('api', 's3', OXIDE),
+    edge('api', 'blobs', OXIDE),
   ]
 }
 
