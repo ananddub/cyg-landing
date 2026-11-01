@@ -199,19 +199,90 @@ function stageEdges(stage) {
   ]
 }
 
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+
+/**
+ * Tween every node from its current position/size to the target layout.
+ * Shared ids fly; new ids fade in at their target; removed ids fade out.
+ * Edges follow automatically (they bind to node handles, not coordinates).
+ */
+function tweenNodes(fromNodes, toNodes, duration, onFrame, onDone) {
+  const startMap = new Map(fromNodes.map((n) => [n.id, n]))
+  const toMap = new Map(toNodes.map((n) => [n.id, n]))
+  const t0 = performance.now()
+
+  function frame(now) {
+    const t = Math.min(1, (now - t0) / duration)
+    const k = easeInOutCubic(t)
+
+    const current = toNodes.map((tn) => {
+      const fn = startMap.get(tn.id)
+      if (!fn) {
+        return { ...tn, style: { ...(tn.style ?? {}), opacity: k } }
+      }
+      const style = { ...(tn.style ?? {}), opacity: 1 }
+      if (fn.style?.width != null && tn.style?.width != null) {
+        style.width = fn.style.width + (tn.style.width - fn.style.width) * k
+        style.height = fn.style.height + (tn.style.height - fn.style.height) * k
+      }
+      return {
+        ...tn,
+        position: {
+          x: fn.position.x + (tn.position.x - fn.position.x) * k,
+          y: fn.position.y + (tn.position.y - fn.position.y) * k,
+        },
+        style,
+      }
+    })
+
+    // nodes that don't exist in the target: fade out in place
+    for (const fn of fromNodes) {
+      if (!toMap.has(fn.id)) {
+        current.push({ ...fn, style: { ...(fn.style ?? {}), opacity: 1 - k } })
+      }
+    }
+
+    onFrame(current)
+    if (t < 1) requestAnimationFrame(frame)
+    else onDone?.()
+  }
+  requestAnimationFrame(frame)
+}
+
 export default function ScalingVisual() {
   const [stage, setStage] = useState(0)
   const [paused, setPaused] = useState(false)
   const timer = useRef(null)
+  const animRef = useRef(false)
+  const rfRef = useRef(null)
+
+  const [nodes, setNodes] = useState(() => stageNodes(0))
+  const edges = useMemo(() => stageEdges(stage), [stage])
+
+  // animate the graph whenever the stage changes — no remount, nodes fly
+  useEffect(() => {
+    animRef.current = true
+    setNodes((current) => {
+      tweenNodes(
+        current,
+        stageNodes(stage),
+        950,
+        (frame) => setNodes(frame),
+        () => {
+          animRef.current = false
+          rfRef.current?.fitView({ padding: 0.18, duration: 450 })
+        },
+      )
+      return current
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage])
 
   useEffect(() => {
     if (paused) return
-    timer.current = setInterval(() => setStage((s) => (s + 1) % 2), 4500)
+    timer.current = setInterval(() => setStage((s) => (s + 1) % 2), 5200)
     return () => clearInterval(timer.current)
   }, [paused])
-
-  const nodes = useMemo(() => stageNodes(stage), [stage])
-  const edges = useMemo(() => stageEdges(stage), [stage])
 
   return (
     <div
@@ -244,9 +315,11 @@ export default function ScalingVisual() {
       {/* the flow diagram */}
       <div className="h-[440px] w-full overflow-hidden rounded-2xl border border-line bg-panel">
         <ReactFlow
-          key={stage}
           nodes={nodes}
           edges={edges}
+          onInit={(instance) => {
+            rfRef.current = instance
+          }}
           nodeTypes={nodeTypes}
           colorMode="dark"
           fitView
