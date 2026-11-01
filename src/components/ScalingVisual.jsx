@@ -119,7 +119,7 @@ const sys = (id, x, y, label, tint, opts = {}) => ({
   id,
   type: 'sys',
   position: { x, y },
-  data: { label, tint, icon: id.replace(/\d+$/, ''), glow: opts.glow ?? false, ...(opts.data ?? {}) },
+  data: { label, tint, icon: id.replace(/[\dA-Z]+$/, ''), glow: opts.glow ?? false, ...(opts.data ?? {}) },
   draggable: false,
   ...(opts.parentId ? { parentId: opts.parentId, extent: 'parent' } : {}),
 })
@@ -149,8 +149,8 @@ const OXIDE = '#4ade80'
 /* ── stage definitions ─────────────────────────────────────────── */
 
 const STAGE_META = [
-  { n: '01', name: 'One box', caption: 'players → API console → rooms · SurrealDB · blobs — all inside one process.' },
-  { n: '02', name: 'Rooms scale out', caption: 'rooms split into their own tier — and SurrealDB moves out too: ws://host:8000, blobs → s3:/bucket.' },
+  { n: '01', name: 'One box', caption: 'players → API console → room A · room B (separate threads) · SurrealDB · blobs — all inside one process.' },
+  { n: '02', name: 'Rooms scale out', caption: 'room A and room B split into their own hosts — SurrealDB out via ws://host:8000, blobs → s3:/bucket.' },
 ]
 
 /** raw graph per stage — positions come from dagre, never from us */
@@ -161,7 +161,8 @@ function stageNodes(stage) {
       { ...plane('pod', 0, 0, 0, 0, 'one binary') },
       { ...sys('players', 0, 0, 'players', 'zinc') },
       { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'pod' }) },
-      { ...sys('rooms', 0, 0, 'rooms · sim', 'oxide', { parentId: 'pod' }) },
+      { ...sys('roomsA', 0, 0, 'room A · sim', 'oxide', { parentId: 'pod' }) },
+      { ...sys('roomsB', 0, 0, 'room B · sim', 'oxide', { parentId: 'pod' }) },
       { ...sys('db', 0, 0, 'SurrealDB', 'ember', { parentId: 'pod' }) },
       { ...sys('blobs', 0, 0, 'blobs · local', 'zinc', { parentId: 'pod' }) },
     ]
@@ -174,8 +175,8 @@ function stageNodes(stage) {
       { ...plane('r2', 0, 0, 0, 0, 'room host') },
       { ...sys('players', 0, 0, 'players', 'zinc') },
       { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'pod' }) },
-      { ...sys('rooms', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r1', glow: true }) },
-      { ...sys('rooms2', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r2', glow: true }) },
+      { ...sys('roomsA', 0, 0, 'room A · sim', 'oxide', { parentId: 'r1', glow: true }) },
+      { ...sys('roomsB', 0, 0, 'room B · sim', 'oxide', { parentId: 'r2', glow: true }) },
       { ...sys('db', 0, 0, 'SurrealDB', 'ember', { glow: true }) },
       { ...sys('blobs', 0, 0, 'S3 bucket', 'zinc', { glow: true, data: { icon: 's3' } }) },
     ]
@@ -187,15 +188,16 @@ function stageEdges(stage) {
   if (stage === 0) {
     return [
       edge('players', 'api', FROST),
-      edge('api', 'rooms', OXIDE),
+      edge('api', 'roomsA', OXIDE),
+      edge('api', 'roomsB', OXIDE),
       edge('api', 'db', OXIDE),
       edge('api', 'blobs', OXIDE),
     ]
   }
   return [
     edge('players', 'api', FROST),
-    edge('api', 'rooms1', OXIDE),
-    edge('api', 'rooms2', OXIDE),
+    edge('api', 'roomsA', OXIDE),
+    edge('api', 'roomsB', OXIDE),
     edge('api', 'db', OXIDE),
     edge('api', 'blobs', OXIDE),
   ]
