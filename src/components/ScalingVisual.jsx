@@ -150,7 +150,7 @@ const OXIDE = '#4ade80'
 
 const STAGE_META = [
   { n: '01', name: 'One box', caption: 'players → API console → rooms · SurrealDB · blobs — all inside one process.' },
-  { n: '02', name: 'Rooms scale out', caption: 'room hosts split into their own tier — API + SurrealDB + blobs stay in the control plane.' },
+  { n: '02', name: 'Rooms scale out', caption: 'rooms split into their own tier — and SurrealDB moves out too: ws://host:8000, blobs → s3:/bucket.' },
 ]
 
 /** raw graph per stage — positions come from dagre, never from us */
@@ -172,10 +172,10 @@ function stageNodes(stage) {
       { ...plane('r2', 0, 0, 0, 0, 'room host') },
       { ...sys('players', 0, 0, 'players', 'zinc') },
       { ...sys('api', 0, 0, 'API + console', 'frost', { parentId: 'cp' }) },
-      { ...sys('db', 0, 0, 'SurrealDB', 'ember', { parentId: 'cp' }) },
-      { ...sys('blobs', 0, 0, 'blobs · local', 'zinc', { parentId: 'cp' }) },
       { ...sys('rooms1', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r1', glow: true }) },
       { ...sys('rooms2', 0, 0, 'rooms · sim', 'oxide', { parentId: 'r2', glow: true }) },
+      { ...sys('db', 0, 0, 'SurrealDB', 'ember', { glow: true }) },
+      { ...sys('s3', 0, 0, 'S3 bucket', 'zinc', { glow: true }) },
     ]
   }
   return layoutGraph(raw, stageEdges(stage))
@@ -195,7 +195,7 @@ function stageEdges(stage) {
     edge('api', 'rooms1', OXIDE),
     edge('api', 'rooms2', OXIDE),
     edge('api', 'db', OXIDE),
-    edge('api', 'blobs', OXIDE),
+    edge('api', 's3', OXIDE),
   ]
 }
 

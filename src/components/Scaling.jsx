@@ -25,11 +25,11 @@ const STAGES = [
       <>
         When CPU hurts, only the rooms move. Room hosts register with the fleet —{' '}
         <b className="text-fg">Agones lifecycle built in</b> (ready, health, retire) — and the
-        matchmaker seats players across them. The control plane keeps API, console, SurrealDB and
-        blobs; pointing <code className="code-inline">database_endpoint</code> at{' '}
-        <code className="code-inline">ws://host:8000</code> and{' '}
-        <code className="code-inline">blobs</code> at S3 makes even that shareable. Same binary
-        everywhere — config decides the role.
+        matchmaker seats players across them. The control plane goes thin too:{' '}
+        <code className="code-inline">database_endpoint = &quot;ws://host:8000&quot;</code> moves{' '}
+        <b className="text-fg">SurrealDB out</b> to its own server,{' '}
+        <code className="code-inline">blobs = &quot;s3:/bucket&quot;</code> moves uploads out —
+        nothing is stuck inside anything. Same binary everywhere — config decides the role.
       </>
     ),
     foot: 'You never split a monolith — you clone it and let config decide its job.',
